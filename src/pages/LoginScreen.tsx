@@ -17,21 +17,45 @@ const LoginScreen = () => {
     setIsLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: { emailRedirectTo: `${window.location.origin}/` },
         });
         if (error) throw error;
-        toast({ title: "สมัครสำเร็จ! 🎉", description: "ยินดีต้อนรับสู่ Movit" });
+
+        // Auto sign-in if email confirmation is enabled and no session was returned
+        if (!data.session) {
+          const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+          if (signInErr) {
+            toast({
+              title: "สมัครสำเร็จ ✉️",
+              description: "กรุณาตรวจอีเมลเพื่อยืนยันบัญชี แล้วลองเข้าสู่ระบบอีกครั้ง",
+            });
+            setMode("signin");
+            return;
+          }
+        }
+        toast({ title: "ยินดีต้อนรับสู่ Movit! 🎉", description: "เริ่มออกกำลังกายกันเลย" });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
     } catch (err: any) {
+      const raw = err?.message ?? "";
+      let description = raw || "ลองใหม่อีกครั้ง";
+      if (raw.includes("Invalid login credentials")) {
+        description = "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
+      } else if (raw.includes("already registered") || raw.includes("User already")) {
+        description = "อีเมลนี้สมัครไว้แล้ว ลองเข้าสู่ระบบแทน";
+      } else if (raw.includes("Password should be")) {
+        description = "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร";
+      } else if (raw.includes("rate limit") || raw.includes("after")) {
+        description = "ส่งคำขอถี่เกินไป รอสักครู่แล้วลองใหม่";
+      }
       toast({
         title: mode === "signup" ? "สมัครไม่สำเร็จ" : "เข้าสู่ระบบไม่สำเร็จ",
-        description: err.message ?? "ลองใหม่อีกครั้ง",
+        description,
         variant: "destructive",
       });
     } finally {
