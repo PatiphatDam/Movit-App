@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { Flame, Footprints, Zap, Clock, ChevronRight, Plus, TrendingUp } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const workouts = [
   {
@@ -44,12 +47,75 @@ interface HomeScreenProps {
 }
 
 const HomeScreen = ({ onWorkoutSelect }: HomeScreenProps) => {
+  const { user } = useAuth();
+  const [displayName, setDisplayName] = useState("Athlete");
+  const [streak, setStreak] = useState(0);
+  const [todayCalories, setTodayCalories] = useState(0);
+  const [todayMinutes, setTodayMinutes] = useState(0);
+  const [weekDays, setWeekDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
+  const [weekCount, setWeekCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", user.id)
+        .maybeSingle();
+      setDisplayName(profile?.display_name || user.email?.split("@")[0] || "Athlete");
+
+      const { data: logs } = await supabase
+        .from("workout_logs")
+        .select("completed_at, calories, duration_seconds")
+        .eq("user_id", user.id)
+        .order("completed_at", { ascending: false });
+      if (!logs) return;
+
+      const today = new Date();
+      const todayStr = today.toDateString();
+      const todayLogs = logs.filter((l) => new Date(l.completed_at).toDateString() === todayStr);
+      setTodayCalories(todayLogs.reduce((s, l) => s + (l.calories ?? 0), 0));
+      setTodayMinutes(Math.round(todayLogs.reduce((s, l) => s + (l.duration_seconds ?? 0), 0) / 60));
+
+      const dates = new Set(logs.map((l) => new Date(l.completed_at).toDateString()));
+      let s = 0;
+      const cur = new Date();
+      while (dates.has(cur.toDateString())) {
+        s++;
+        cur.setDate(cur.getDate() - 1);
+      }
+      setStreak(s);
+
+      const monday = new Date(today);
+      const dayIdx = (monday.getDay() + 6) % 7;
+      monday.setDate(monday.getDate() - dayIdx);
+      monday.setHours(0, 0, 0, 0);
+      const flags = Array(7).fill(false);
+      logs.forEach((l) => {
+        const d = new Date(l.completed_at);
+        const diff = Math.floor((d.getTime() - monday.getTime()) / 86400000);
+        if (diff >= 0 && diff < 7) flags[diff] = true;
+      });
+      setWeekDays(flags);
+      setWeekCount(flags.filter(Boolean).length);
+    };
+    load();
+  }, [user]);
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good Morning 👋";
+    if (h < 18) return "Good Afternoon ☀️";
+    return "Good Evening 🌙";
+  })();
+
   return (
     <div className="min-h-screen bg-background pb-24 animate-fade-in">
       {/* Header */}
       <div className="px-5 pt-12 pb-4">
-        <p className="text-muted-foreground text-sm font-medium">Good Morning 👋</p>
-        <h1 className="text-3xl font-black mt-0.5 tracking-tight">Patiphat</h1>
+        <p className="text-muted-foreground text-sm font-medium">{greeting}</p>
+        <h1 className="text-3xl font-black mt-0.5 tracking-tight">{displayName}</h1>
       </div>
 
       {/* Streak Banner */}
