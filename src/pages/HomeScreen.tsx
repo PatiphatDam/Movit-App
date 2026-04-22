@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { Flame, Footprints, Zap, Clock, ChevronRight, Plus, TrendingUp } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const workouts = [
   {
@@ -44,12 +47,75 @@ interface HomeScreenProps {
 }
 
 const HomeScreen = ({ onWorkoutSelect }: HomeScreenProps) => {
+  const { user } = useAuth();
+  const [displayName, setDisplayName] = useState("Athlete");
+  const [streak, setStreak] = useState(0);
+  const [todayCalories, setTodayCalories] = useState(0);
+  const [todayMinutes, setTodayMinutes] = useState(0);
+  const [weekDays, setWeekDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
+  const [weekCount, setWeekCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", user.id)
+        .maybeSingle();
+      setDisplayName(profile?.display_name || user.email?.split("@")[0] || "Athlete");
+
+      const { data: logs } = await supabase
+        .from("workout_logs")
+        .select("completed_at, calories, duration_seconds")
+        .eq("user_id", user.id)
+        .order("completed_at", { ascending: false });
+      if (!logs) return;
+
+      const today = new Date();
+      const todayStr = today.toDateString();
+      const todayLogs = logs.filter((l) => new Date(l.completed_at).toDateString() === todayStr);
+      setTodayCalories(todayLogs.reduce((s, l) => s + (l.calories ?? 0), 0));
+      setTodayMinutes(Math.round(todayLogs.reduce((s, l) => s + (l.duration_seconds ?? 0), 0) / 60));
+
+      const dates = new Set(logs.map((l) => new Date(l.completed_at).toDateString()));
+      let s = 0;
+      const cur = new Date();
+      while (dates.has(cur.toDateString())) {
+        s++;
+        cur.setDate(cur.getDate() - 1);
+      }
+      setStreak(s);
+
+      const monday = new Date(today);
+      const dayIdx = (monday.getDay() + 6) % 7;
+      monday.setDate(monday.getDate() - dayIdx);
+      monday.setHours(0, 0, 0, 0);
+      const flags = Array(7).fill(false);
+      logs.forEach((l) => {
+        const d = new Date(l.completed_at);
+        const diff = Math.floor((d.getTime() - monday.getTime()) / 86400000);
+        if (diff >= 0 && diff < 7) flags[diff] = true;
+      });
+      setWeekDays(flags);
+      setWeekCount(flags.filter(Boolean).length);
+    };
+    load();
+  }, [user]);
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good Morning 👋";
+    if (h < 18) return "Good Afternoon ☀️";
+    return "Good Evening 🌙";
+  })();
+
   return (
     <div className="min-h-screen bg-background pb-24 animate-fade-in">
       {/* Header */}
       <div className="px-5 pt-12 pb-4">
-        <p className="text-muted-foreground text-sm font-medium">Good Morning 👋</p>
-        <h1 className="text-3xl font-black mt-0.5 tracking-tight">Patiphat</h1>
+        <p className="text-muted-foreground text-sm font-medium">{greeting}</p>
+        <h1 className="text-3xl font-black mt-0.5 tracking-tight">{displayName}</h1>
       </div>
 
       {/* Streak Banner */}
@@ -61,12 +127,12 @@ const HomeScreen = ({ onWorkoutSelect }: HomeScreenProps) => {
             </div>
             <div>
               <p className="text-primary-foreground/80 text-xs font-medium">Current Streak</p>
-              <p className="text-primary-foreground text-2xl font-black leading-none">7 Days 🔥</p>
+              <p className="text-primary-foreground text-2xl font-black leading-none">{streak} {streak === 1 ? "Day" : "Days"} 🔥</p>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-primary-foreground/80 text-xs">Best: 14 days</p>
-            <p className="text-primary-foreground text-sm font-bold mt-0.5">Keep going!</p>
+            <p className="text-primary-foreground/80 text-xs">{streak === 0 ? "Start today!" : "Keep it up!"}</p>
+            <p className="text-primary-foreground text-sm font-bold mt-0.5">You got this</p>
           </div>
         </div>
       </div>
@@ -75,42 +141,39 @@ const HomeScreen = ({ onWorkoutSelect }: HomeScreenProps) => {
       <div className="px-5 mb-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-bold">Today's Stats</h2>
-          <span className="text-xs text-muted-foreground">Feb 19</span>
+          <span className="text-xs text-muted-foreground">{new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          {/* Steps */}
           <div className="surface-1 rounded-2xl p-4 shadow-card border border-border">
             <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center mb-2">
               <Footprints className="w-4 h-4 text-blue-400" />
             </div>
-            <p className="text-xl font-black">8,432</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Steps</p>
+            <p className="text-xl font-black">{weekDays[(new Date().getDay() + 6) % 7] ? "✓" : "0"}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Today</p>
             <div className="mt-2 w-full h-1.5 bg-surface-3 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500 rounded-full" style={{ width: "84%" }} />
+              <div className="h-full bg-blue-500 rounded-full" style={{ width: weekDays[(new Date().getDay() + 6) % 7] ? "100%" : "0%" }} />
             </div>
           </div>
 
-          {/* Calories */}
           <div className="surface-1 rounded-2xl p-4 shadow-card border border-border">
             <div className="w-8 h-8 bg-orange/10 rounded-lg flex items-center justify-center mb-2">
               <Zap className="w-4 h-4 text-orange" />
             </div>
-            <p className="text-xl font-black">642</p>
+            <p className="text-xl font-black">{todayCalories}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Calories</p>
             <div className="mt-2 w-full h-1.5 bg-surface-3 rounded-full overflow-hidden">
-              <div className="h-full bg-orange rounded-full" style={{ width: "64%" }} />
+              <div className="h-full bg-orange rounded-full" style={{ width: `${Math.min(100, (todayCalories / 1000) * 100)}%` }} />
             </div>
           </div>
 
-          {/* Minutes */}
           <div className="surface-1 rounded-2xl p-4 shadow-card border border-border">
             <div className="w-8 h-8 bg-purple-500/10 rounded-lg flex items-center justify-center mb-2">
               <Clock className="w-4 h-4 text-purple-400" />
             </div>
-            <p className="text-xl font-black">47</p>
+            <p className="text-xl font-black">{todayMinutes}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Minutes</p>
             <div className="mt-2 w-full h-1.5 bg-surface-3 rounded-full overflow-hidden">
-              <div className="h-full bg-purple-500 rounded-full" style={{ width: "47%" }} />
+              <div className="h-full bg-purple-500 rounded-full" style={{ width: `${Math.min(100, (todayMinutes / 60) * 100)}%` }} />
             </div>
           </div>
         </div>
@@ -122,17 +185,17 @@ const HomeScreen = ({ onWorkoutSelect }: HomeScreenProps) => {
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="w-4 h-4 text-orange" />
             <span className="text-sm font-bold">Weekly Progress</span>
-            <span className="ml-auto text-xs text-orange font-semibold">5/7 days</span>
+            <span className="ml-auto text-xs text-orange font-semibold">{weekCount}/7 days</span>
           </div>
           <div className="flex items-end gap-1.5 h-12">
-            {[65, 80, 45, 90, 70, 0, 0].map((val, i) => (
+            {weekDays.map((done, i) => (
               <div key={i} className="flex-1 flex flex-col items-center gap-1">
                 <div
                   className="w-full rounded-sm transition-all"
                   style={{
-                    height: `${val}%`,
-                    background: val > 0 ? "hsl(var(--orange))" : "hsl(var(--surface-3))",
-                    opacity: val > 0 ? 1 : 0.4,
+                    height: done ? "100%" : "20%",
+                    background: done ? "hsl(var(--orange))" : "hsl(var(--surface-3))",
+                    opacity: done ? 1 : 0.4,
                   }}
                 />
               </div>

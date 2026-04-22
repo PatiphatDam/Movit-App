@@ -1,5 +1,9 @@
-import { useState, useEffect } from "react";
-import { ArrowLeft, Clock, Zap, Flame, Play, CheckCircle, ChevronRight } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { ArrowLeft, Clock, Zap, Flame, Play, CheckCircle, ChevronRight, Trophy } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
+import { fireConfetti, getRandomCelebration } from "@/lib/celebrate";
 
 const workoutDetails: Record<number, {
   name: string;
@@ -67,10 +71,13 @@ interface WorkoutDetailProps {
 }
 
 const WorkoutDetail = ({ workoutId, onBack }: WorkoutDetailProps) => {
+  const { user } = useAuth();
   const [started, setStarted] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [completedExercises, setCompletedExercises] = useState<Set<number>>(new Set());
+  const celebration = useMemo(() => getRandomCelebration(), [workoutId]);
 
   const workout = workoutDetails[workoutId] || workoutDetails[1];
 
@@ -99,9 +106,35 @@ const WorkoutDetail = ({ workoutId, onBack }: WorkoutDetailProps) => {
     });
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     setCompleted(true);
     setStarted(false);
+    fireConfetti();
+
+    if (!user) return;
+    setSaving(true);
+    const { error } = await supabase.from("workout_logs").insert({
+      user_id: user.id,
+      workout_id: workoutId,
+      workout_name: workout.name,
+      workout_type: workout.type,
+      duration_seconds: seconds,
+      calories: workout.calories,
+      difficulty: workout.difficulty,
+    });
+    setSaving(false);
+    if (error) {
+      toast({
+        title: "บันทึกไม่สำเร็จ",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: celebration.title,
+        description: `บันทึก ${workout.name} เรียบร้อย · ${formatTime(seconds)}`,
+      });
+    }
   };
 
   return (
@@ -155,10 +188,27 @@ const WorkoutDetail = ({ workoutId, onBack }: WorkoutDetailProps) => {
 
       {/* Completed Banner */}
       {completed && (
-        <div className="mx-5 mb-5 surface-1 border border-green-500/30 rounded-2xl p-5 text-center animate-scale-in">
-          <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
-          <p className="text-lg font-black">Workout Complete! 🎉</p>
-          <p className="text-muted-foreground text-sm mt-1">You crushed it! {formatTime(seconds)} total</p>
+        <div className="mx-5 mb-5 gradient-orange rounded-2xl p-6 text-center animate-scale-in shadow-orange relative overflow-hidden">
+          <div className="absolute inset-0 opacity-20" style={{ background: "radial-gradient(circle at 50% 0%, white, transparent 60%)" }} />
+          <div className="relative">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-primary-foreground/20 flex items-center justify-center backdrop-blur-sm">
+              <Trophy className="w-8 h-8 text-primary-foreground" />
+            </div>
+            <p className="text-2xl font-black text-primary-foreground">{celebration.title}</p>
+            <p className="text-primary-foreground/90 text-sm mt-1 font-medium">{celebration.subtitle}</p>
+            <div className="flex items-center justify-center gap-4 mt-4 text-primary-foreground">
+              <div className="text-center">
+                <p className="text-xs opacity-80 uppercase tracking-wider">Time</p>
+                <p className="text-lg font-black">{formatTime(seconds)}</p>
+              </div>
+              <div className="w-px h-8 bg-primary-foreground/30" />
+              <div className="text-center">
+                <p className="text-xs opacity-80 uppercase tracking-wider">Calories</p>
+                <p className="text-lg font-black">{workout.calories}</p>
+              </div>
+            </div>
+            {saving && <p className="text-xs text-primary-foreground/80 mt-3">บันทึกผลลัพธ์...</p>}
+          </div>
         </div>
       )}
 

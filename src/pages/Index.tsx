@@ -4,9 +4,9 @@ import LoginScreen from "./LoginScreen";
 import HomeScreen from "./HomeScreen";
 import WorkoutDetail from "./WorkoutDetail";
 import ProfileScreen from "./ProfileScreen";
+import { useAuth } from "@/hooks/useAuth";
 
 type Tab = "home" | "workouts" | "profile";
-type Screen = "login" | "home" | "detail" | "profile";
 
 const tabs = [
   { id: "home" as Tab, label: "Home", icon: Home },
@@ -15,39 +15,33 @@ const tabs = [
 ];
 
 const Index = () => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [selectedWorkout, setSelectedWorkout] = useState<number | null>(null);
 
-  const handleLogin = () => setIsLoggedIn(true);
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setActiveTab("home");
-  };
-
-  const handleWorkoutSelect = (id: number) => {
-    setSelectedWorkout(id);
-  };
-
-  const handleBackFromDetail = () => {
-    setSelectedWorkout(null);
-  };
-
+  const handleWorkoutSelect = (id: number) => setSelectedWorkout(id);
+  const handleBackFromDetail = () => setSelectedWorkout(null);
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
     setSelectedWorkout(null);
   };
 
-  if (!isLoggedIn) {
-    return <LoginScreen onLogin={handleLogin} />;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-orange border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
-  // Determine screen to show
-  const showDetail = selectedWorkout !== null && activeTab === "home";
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  const showDetail = selectedWorkout !== null && (activeTab === "home" || activeTab === "workouts");
 
   return (
     <div className="min-h-screen bg-background relative">
-      {/* Main Content */}
       <div className="max-w-md mx-auto">
         {showDetail ? (
           <WorkoutDetail workoutId={selectedWorkout!} onBack={handleBackFromDetail} />
@@ -56,11 +50,10 @@ const Index = () => {
         ) : activeTab === "workouts" ? (
           <WorkoutsTab onWorkoutSelect={handleWorkoutSelect} />
         ) : (
-          <ProfileScreen onLogout={handleLogout} />
+          <ProfileScreen />
         )}
       </div>
 
-      {/* Bottom Tab Bar */}
       {!showDetail && (
         <nav className="fixed bottom-0 left-0 right-0 z-50">
           <div className="max-w-md mx-auto">
@@ -93,7 +86,6 @@ const Index = () => {
   );
 };
 
-// Workouts tab — list of all workouts
 const workoutsList = [
   { id: 1, name: "Morning Run", type: "Running", icon: "🏃", duration: "32 min", calories: 285, difficulty: "Medium" },
   { id: 2, name: "Upper Body Strength", type: "Strength", icon: "💪", duration: "45 min", calories: 320, difficulty: "Hard" },
@@ -122,7 +114,6 @@ const WorkoutsTab = ({ onWorkoutSelect }: { onWorkoutSelect: (id: number) => voi
         <p className="text-muted-foreground text-sm mt-0.5">Choose your workout</p>
       </div>
 
-      {/* Filter Pills */}
       <div className="flex gap-2 px-5 mb-4 overflow-x-auto pb-1 scrollbar-hide">
         {filters.map((f) => (
           <button
@@ -139,7 +130,6 @@ const WorkoutsTab = ({ onWorkoutSelect }: { onWorkoutSelect: (id: number) => voi
         ))}
       </div>
 
-      {/* Workout Cards */}
       <div className="px-5 space-y-3">
         {filtered.map((workout) => (
           <button
